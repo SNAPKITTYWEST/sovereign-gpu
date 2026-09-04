@@ -1,0 +1,48 @@
+{
+  "format": "yosys-compatible JSON netlist",
+  "modules": [
+    {
+      "name": "sass_processor",
+      "ports": [
+        {
+          "name": "clk",
+          "direction": "input",
+          "width": 1
+        },
+        {
+          "name": "rst_n",
+          "direction": "input",
+          "width": 1
+        },
+        {
+          "name": "instruction",
+          "direction": "input",
+          "width": 128
+        },
+        {
+          "name": "operands",
+          "direction": "input",
+          "width": 128
+        },
+        {
+          "name": "result",
+          "direction": "output",
+          "width": 128
+        },
+        {
+          "name": "done",
+          "direction": "output",
+          "width": 1
+        }
+      ],
+      "cells": [],
+      "estimated_gates": 3431
+    }
+  ],
+  "metadata": {
+    "sass_instruction_count": 73,
+    "target": "sm_89",
+    "total_sass_bytes": 1178,
+    "estimated_gate_count": 3431
+  }
+}
