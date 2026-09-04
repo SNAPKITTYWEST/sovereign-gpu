@@ -1,0 +1,37 @@
+(* entropy.mlw — External entropy buffer and replay axiom
+   Sovereign Source License v1.0 + BSL-1.1 + AGPL-3.0
+   Copyright (C) 2026 Ahmad Ali Parr / SNAPKITTYWEST *)
+
+module Entropy
+
+  use import int.Int
+  use import list.List
+  use import list.Length
+  use import list.Nth
+
+  type entropy = int
+
+  type system_state = {
+    qrng_buf : list entropy;
+    seed_buf : list int;
+  }
+
+  axiom replay_seed :
+    forall s1 s2.
+      s1.qrng_buf = s2.qrng_buf ->
+      s1.seed_buf = s2.seed_buf
+
+  function qrng_read (st : system_state) : (entropy, system_state) =
+    match st.qrng_buf with
+    | Nil -> (0, st)
+    | Cons h t -> (h, { st with qrng_buf = t })
+    end
+
+  lemma qrng_read_preserves_length :
+    forall st.
+      match st.qrng_buf with
+      | Nil -> true
+      | Cons _ t -> length t = length st.qrng_buf - 1
+      end
+
+end

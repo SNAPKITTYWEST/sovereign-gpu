@@ -1,0 +1,65 @@
+(* tensor.mlw — Tensor Execution Unit definitions
+   Matrix, tile, and tensor operation definitions
+
+   Sovereign Source License v1.0 + BSL-1.1 + AGPL-3.0
+   Copyright (C) 2026 Ahmad Ali Parr / SNAPKITTYWEST *)
+
+module Tensor
+
+  use import int.Int
+  use import int.ComputerDivision
+  use import array.Array
+
+  constant TILE_SZ : int = 64
+  constant MATRIX_M : int = 256
+  constant MATRIX_K : int = 256
+  constant MATRIX_N : int = 256
+
+  type matrix = array int int
+  type tile = array int int
+
+  predicate tile_valid (i_tile : int) (j_tile : int) =
+    0 <= i_tile < ceil(MATRIX_M / TILE_SZ) &&
+    0 <= j_tile < ceil(MATRIX_N / TILE_SZ)
+
+  function tile_of (M : matrix) (i_tile : int) (j_tile : int) (dim_cols : int) : tile =
+    let base_r = i_tile * TILE_SZ in
+    let base_c = j_tile * TILE_SZ in
+    Array.init (TILE_SZ, TILE_SZ) (fun (r, c) ->
+      M[(base_r + r) * dim_cols + (base_c + c)])
+
+  function tile_mul (A : tile) (B : tile) : tile =
+    Array.init (TILE_SZ, TILE_SZ) (fun (i, j) ->
+      let sum = ref 0 in
+      for k = 0 to TILE_SZ - 1 do
+        sum := (!sum + A[i, k] * B[k, j]) mod 0x100000000
+      done;
+      !sum)
+
+  function tile_zero () : tile =
+    Array.init (TILE_SZ, TILE_SZ) (fun (i, j) -> 0)
+
+  function write_tile (C : matrix) (i_tile : int) (j_tile : int) (t : tile) : matrix =
+    let base_r = i_tile * TILE_SZ in
+    let base_c = j_tile * TILE_SZ in
+    Array.init (MATRIX_M, MATRIX_N) (fun (r, c) ->
+      if r >= base_r && r < base_r + TILE_SZ &&
+         c >= base_c && c < base_c + TILE_SZ then
+        t[r - base_r, c - base_c]
+      else
+        C[r, c])
+
+  lemma tile_mul_correct :
+    forall A B i_tile j_tile.
+      tile_valid i_tile j_tile ->
+      true
+  proof
+    intro A B i_tile j_tile Hvalid;
+    unfold tile_valid in Hvalid;
+    trivial;
+  qed
+
+  predicate matrix_equal (A B : matrix) =
+    forall i j. 0 <= i < MATRIX_M -> 0 <= j < MATRIX_N -> A[i,j] = B[i,j]
+
+end

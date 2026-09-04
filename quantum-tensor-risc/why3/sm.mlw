@@ -1,0 +1,119 @@
+(* sm.mlw — Streaming Multiprocessor state and step function
+   Sovereign Source License v1.0 + BSL-1.1 + AGPL-3.0
+   Copyright (C) 2026 Ahmad Ali Parr / SNAPKITTYWEST *)
+
+module SM
+
+  use import int.Int
+  use import int.ComputerDivision
+  use import array.Array
+  use import ISA
+
+  constant REG_COUNT : int = 32
+  constant LOCAL_MEM_SIZE : int = 1024
+
+  type sm_state = {
+    pc : int;
+    regs : array int;
+    flags_z : bool;
+    flags_n : bool;
+    local_mem : array int;
+    active : bool;
+    halted : bool;
+    sm_id : int;
+  }
+
+  type sched_evt =
+    | SPAWN_EVT (label : int)
+    | JOIN_EVT (label : int)
+    | BARRIER_EVT (id : int)
+    | SYNC_EVT
+    | NO_EVT
+
+  predicate sm_valid (s : sm_state) =
+    reg_valid s.sm_id &&
+    pc_valid s.pc &&
+    s.sm_id >= 0
+
+  function step_sm (s : sm_state) (instr : instr) (shared_mem : array int) : (sm_state, array int, sched_evt) =
+    match instr with
+    | R OP_ADD rd rs1 rs2 _ _ ->
+        let v1 = s.regs[rs1] in
+        let v2 = s.regs[rs2] in
+        let result = (v1 + v2) mod 0x100000000 in
+        let s' = { s with regs = Array.set s.regs rd result;
+                          pc = s.pc + 4 } in
+        (s', shared_mem, NO_EVT)
+    | R OP_SUB rd rs1 rs2 _ _ ->
+        let v1 = s.regs[rs1] in
+        let v2 = s.regs[rs2] in
+        let result = (v1 - v2) mod 0x100000000 in
+        let s' = { s with regs = Array.set s.regs rd result;
+                          pc = s.pc + 4 } in
+        (s', shared_mem, NO_EVT)
+    | R OP_MUL rd rs1 rs2 _ _ ->
+        let v1 = s.regs[rs1] in
+        let v2 = s.regs[rs2] in
+        let result = (v1 * v2) mod 0x100000000 in
+        let s' = { s with regs = Array.set s.regs rd result;
+                          pc = s.pc + 4 } in
+        (s', shared_mem, NO_EVT)
+    | I OP_LDI rd _ imm _ ->
+        let s' = { s with regs = Array.set s.regs rd imm;
+                          pc = s.pc + 4 } in
+        (s', shared_mem, NO_EVT)
+    | I OP_ADDI rd rs1 imm _ ->
+        let v = s.regs[rs1] in
+        let result = (v + imm) mod 0x100000000 in
+        let s' = { s with regs = Array.set s.regs rd result;
+                          pc = s.pc + 4 } in
+        (s', shared_mem, NO_EVT)
+    | I OP_SMID rd _ _ _ ->
+        let s' = { s with regs = Array.set s.regs rd s.sm_id;
+                          pc = s.pc + 4 } in
+        (s', shared_mem, NO_EVT)
+    | J OP_JMP rd imm ->
+        let s' = { s with pc = imm } in
+        (s', shared_mem, NO_EVT)
+    | J OP_CALL rd imm ->
+        let s' = { s with regs = Array.set s.regs 31 (s.pc + 4);
+                          pc = imm } in
+        (s', shared_mem, NO_EVT)
+    | R OP_RET _ _ _ _ _ ->
+        let ret_addr = s.regs[31] in
+        let s' = { s with pc = ret_addr } in
+        (s', shared_mem, NO_EVT)
+    | R OP_HALT _ _ _ _ _ ->
+        let s' = { s with halted = true; active = false; pc = HALT_ADDR } in
+        (s', shared_mem, NO_EVT)
+    | I OP_SPAWN rd _ imm _ ->
+        let s' = { s with pc = s.pc + 4 } in
+        (s', shared_mem, SPAWN_EVT imm)
+    | I OP_BARRIER rd _ imm _ ->
+        let s' = { s with pc = s.pc + 4 } in
+        (s', shared_mem, BARRIER_EVT imm)
+    | R OP_SYNC _ _ _ _ _ ->
+        let s' = { s with pc = s.pc + 4 } in
+        (s', shared_mem, SYNC_EVT)
+    | I OP_LD rd rs1 imm _ ->
+        let addr = (s.regs[rs1] + imm) mod 0x100000000 in
+        let val = shared_mem[addr] in
+        let s' = { s with regs = Array.set s.regs rd val;
+                          pc = s.pc + 4 } in
+        (s', shared_mem, NO_EVT)
+    | S OP_ST rs1 rs2 imm _ ->
+        let addr = (s.regs[rs1] + imm) mod 0x100000000 in
+        let val = s.regs[rs2] in
+        let mem' = Array.set shared_mem addr val in
+        let s' = { s with pc = s.pc + 4 } in
+        (s', mem', NO_EVT)
+    | _ -> (s, shared_mem, NO_EVT)
+    end
+
+  lemma sm_isolation :
+    forall s1 s2 instr mem.
+      s1.sm_id <> s2.sm_id ->
+      let (s1', _, _) = step_sm s1 instr mem in
+      s1'.sm_id = s1.sm_id
+
+end

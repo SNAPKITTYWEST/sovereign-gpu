@@ -1,0 +1,162 @@
+(* scheduler.mlw — QRNG-driven deterministic scheduler with priority
+   PO8: Scheduler Safety — map always returns an element of valid_actions
+
+   Sovereign Source License v1.0 + BSL-1.1 + AGPL-3.0
+   Copyright (C) 2026 Ahmad Ali Parr / SNAPKITTYWEST *)
+
+module Scheduler
+
+  use import int.Int
+  use import int.ComputerDivision
+  use import list.List
+  use import list.Length
+  use import list.Nth
+  use import list.Mem
+  use import map.Map
+  use import Seed
+
+  constant MAX_PRIO : int = 7
+  constant SM_COUNT_MAX : int = 128
+
+  type sm_id = int
+  type label = int
+  type barrier_id = int
+
+  type action =
+    | RUN (sm_id)
+    | SPAWN (label)
+    | JOIN (label)
+    | BARRIER_RELEASE (barrier_id)
+    | SYNC
+    | NO_OP
+
+  type task = {
+    lbl : label;
+    prio : int;
+  }
+
+  type sched_state = {
+    pending_tasks : list task;
+    barrier_cnt : map int int;
+    sm_count : int;
+  }
+
+  predicate task_well_formed (t : task) =
+    0 <= t.prio <= MAX_PRIO
+
+  predicate pending_well_formed (l : list task) =
+    forall t. mem t l -> task_well_formed t
+
+  function sm_runnable (halted : array bool) (i : sm_id) : bool =
+    not (halted[i])
+
+  function all_run_candidates (halted : array bool) (n : int) : list action =
+    List.init n (fun k -> RUN k)
+
+  function barrier_release_candidates (barrier_cnt : map int int) (sm_count : int) : list action =
+    Map.fold (fun id cnt acc ->
+      if cnt = sm_count then BARRIER_RELEASE id :: acc else acc)
+    barrier_cnt []
+
+  function spawn_candidate (pending : list task) : list action =
+    match pending with
+    | Nil -> []
+    | Cons t _ -> [SPAWN t.lbl]
+    end
+
+  function valid_actions (st : sched_state) (halted : array bool) : list action =
+    let runs = all_run_candidates halted st.sm_count in
+    let bars = barrier_release_candidates st.barrier_cnt st.sm_count in
+    let spawns = spawn_candidate st.pending_tasks in
+    runs @ spawns @ bars @ [NO_OP]
+
+  function max_prio (l : list task) : int =
+    match l with
+    | Nil -> -1
+    | Cons t _ -> t.prio
+    end
+
+  function eligible_tasks (l : list task) : list task =
+    let mp = max_prio l in
+    List.filter (fun t -> t.prio = mp) l
+
+  function tasks_to_actions (l : list task) : list action =
+    List.map (fun t -> SPAWN t.lbl) l
+
+  function priority_valid_actions (st : sched_state) (halted : array bool) : list action =
+    let elig = eligible_tasks st.pending_tasks in
+    tasks_to_actions elig
+
+  function map (q : int) (A : list action) : action =
+    if List.length A = 0 then NO_OP
+    else List.nth A ((to_int q) mod List.length A)
+
+  function apply_action (st : sched_state) (a : action) : sched_state =
+    match a with
+    | RUN _ -> st
+    | NO_OP -> st
+    | SPAWN lbl ->
+        let new_pending = match st.pending_tasks with
+          | Nil -> Nil
+          | Cons _ tl -> tl
+        end in
+        { st with pending_tasks = new_pending }
+    | BARRIER_RELEASE bid ->
+        let new_map = Map.set st.barrier_cnt bid 0 in
+        { st with barrier_cnt = new_map }
+    | SYNC -> st
+    | JOIN _ -> st
+    end
+
+  function scheduler_step (st : sched_state) (halted : array bool) (q : int) : (action, sched_state) =
+    let A = valid_actions st halted in
+    let act = map q A in
+    let st' = apply_action st act in
+    (act, st')
+
+  (* ================================================================== *)
+  (* PROOFS                                                             *)
+  (* ================================================================== *)
+
+  lemma no_op_always_valid :
+    forall st halted. mem NO_OP (valid_actions st halted)
+  proof
+    intro st halted;
+    unfold valid_actions;
+    apply list.mem_append_right;
+    apply list.mem_singleton;
+  qed
+
+  lemma map_returns_member :
+    forall q A.
+      let a = map q A in mem a A
+  proof
+    intro q A; unfold map;
+    case (List.length A = 0);
+    intro H0;
+    rewrite H0;
+    simpl;
+    exact (list.mem_singleton NO_OP);
+    intro Hnz;
+    have LenPos : List.length A > 0 by (apply List.length_pos; exact Hnz);
+    set i = ((to_int q) mod List.length A);
+    have IRange : 0 <= i < List.length A
+      by (apply int.mod_range; exact LenPos);
+    have MemNth : mem (List.nth A i) A
+      by (apply list.nth_mem; exact IRange);
+    rewrite (if_false (not (List.length A = 0))) in *;
+    [ rewrite IRange; exact MemNth | trivial ];
+  qed
+
+  lemma scheduler_safety :
+    forall st halted q.
+      let A = valid_actions st halted in
+      let a = map q A in
+      mem a A
+  proof
+    intro st halted q;
+    unfold valid_actions, map;
+    apply map_returns_member;
+  qed
+
+end

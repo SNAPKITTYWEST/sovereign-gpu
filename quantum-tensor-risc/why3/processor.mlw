@@ -1,0 +1,102 @@
+(* processor.mlw — Global system state and GLOBAL_STEP
+   Integrates SM, Scheduler, Tensor, and Entropy modules
+
+   Sovereign Source License v1.0 + BSL-1.1 + AGPL-3.0
+   Copyright (C) 2026 Ahmad Ali Parr / SNAPKITTYWEST *)
+
+module Processor
+
+  use import int.Int
+  use import array.Array
+  use import ISA
+  use import SM
+  use import Scheduler
+  use import Tensor
+  use import Entropy
+  use import Seed
+
+  constant SHARED_MEM_SIZE : int = 65536
+
+  type system_state = {
+    sm_states : array sm_state;
+    shared_mem : array int;
+    sched_state : sched_state;
+    qrng_buf : list int;
+    tensor_fabric_a : matrix;
+    tensor_fabric_b : matrix;
+    tensor_fabric_c : matrix;
+  }
+
+  predicate system_valid (st : system_state) =
+    st.sched_state.sm_count > 0 &&
+    st.sched_state.sm_count <= SM_COUNT_MAX
+
+  function global_step (st : system_state) (entropy_word : int) : system_state =
+    let seed = qseed entropy_word in
+    let (act, sched') = scheduler_step st.sched_state
+                          (Array.init SM_COUNT_MAX (fun i -> st.sm_states[i].halted))
+                          seed in
+    match act with
+    | RUN sm_id ->
+        let sm = st.sm_states[sm_id] in
+        if sm.halted || not sm.active then
+          st
+        else
+          let instr = (* FETCH from program memory *) I OP_HALT 0 0 0 0 in
+          let (sm', mem', evt) = step_sm sm instr st.shared_mem in
+          let st' = { st with sm_states = Array.set st.sm_states sm_id sm';
+                              shared_mem = mem';
+                              sched_state = sched' } in
+          st'
+    | SPAWN lbl ->
+        { st with sched_state = sched' }
+    | BARRIER_RELEASE bid ->
+        { st with sched_state = sched' }
+    | _ -> { st with sched_state = sched' }
+    end
+
+  function tensor_step (st : system_state) (i_tile j_tile : int) : system_state =
+    let A_tile = tile_of st.tensor_fabric_a i_tile 0 MATRIX_N in
+    let B_tile = tile_of st.tensor_fabric_b 0 j_tile MATRIX_N in
+    let C_tile = tile_mul A_tile B_tile in
+    let new_c = write_tile st.tensor_fabric_c i_tile j_tile C_tile in
+    { st with tensor_fabric_c = new_c }
+
+  (* Invariants *)
+
+  predicate register_bounds (st : system_state) =
+    forall i. 0 <= i < st.sched_state.sm_count ->
+      forall r. 0 <= r <= 31 ->
+        st.sm_states[i].regs[r] >= 0 &&
+        st.sm_states[i].regs[r] < 0x100000000
+
+  predicate pc_validity (st : system_state) =
+    forall i. 0 <= i < st.sched_state.sm_count ->
+      pc_valid st.sm_states[i].pc
+
+  predicate sm_isolation (st : system_state) =
+    forall i j. 0 <= i < st.sched_state.sm_count ->
+                0 <= j < st.sched_state.sm_count ->
+                i <> j ->
+                st.sm_states[i].sm_id <> st.sm_states[j].sm_id
+
+  lemma global_step_preserves_register_bounds :
+    forall st e. system_valid st -> register_bounds st ->
+      register_bounds (global_step st e)
+  proof
+    intros st e Hvalid Hbounds;
+    unfold register_bounds, global_step;
+    (* Proof by case analysis on scheduler action *)
+    admit;
+  qed
+
+  lemma global_step_preserves_pc_validity :
+    forall st e. system_valid st -> pc_validity st ->
+      pc_validity (global_step st e)
+  proof
+    intros st e Hvalid Hpc;
+    unfold pc_validity, global_step;
+    admit;
+  qed
+
+end

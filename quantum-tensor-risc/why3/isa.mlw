@@ -1,0 +1,94 @@
+(* isa.mlw — 32-bit fixed-width RISC ISA definition
+   7-bit opcode, 5-bit register fields, 12-bit immediates
+   Sovereign Source License v1.0 + BSL-1.1 + AGPL-3.0
+   Copyright (C) 2026 Ahmad Ali Parr / SNAPKITTYWEST *)
+
+module ISA
+
+  use import int.Int
+  use import int.ComputerDivision
+  use import bool.Bool
+
+  type opcode =
+    | OP_ADD | OP_SUB | OP_MUL | OP_DIV
+    | OP_AND | OP_OR | OP_XOR | OP_NOT
+    | OP_CMP | OP_SLT | OP_SEQ | OP_SNE
+    | OP_ADDI | OP_ANDI | OP_ORI | OP_XORI
+    | OP_LD | OP_ST | OP_LDI
+    | OP_JMP | OP_BEQ | OP_BNE | OP_BLT | OP_BGE
+    | OP_CALL | OP_RET | OP_HALT
+    | OP_SPAWN | OP_JOIN | OP_SYNC | OP_BARRIER
+    | OP_SMID | OP_LANEID | OP_COREID
+    | OP_QRNG_READ | OP_QRNG_SEED
+    | OP_ATOM_ADD | OP_ATOM_SUB | OP_ATOM_AND
+    | OP_ATOM_OR | OP_ATOM_XOR | OP_ATOM_CAS
+    | OP_TMOV | OP_TLOAD | OP_TSTORE | OP_TZERO
+    | OP_TSYNC | OP_TILEID | OP_TILESZ
+    | OP_TREDUCE | OP_TZERO_PROD | OP_TREDUCE_SYNC.
+
+  type funct3 = int
+  type funct7 = int
+  type reg = int
+  type imm12 = int
+
+  type instr =
+    | R (op : opcode) (rd : reg) (rs1 : reg) (rs2 : reg) (f3 : funct3) (f7 : funct7)
+    | I (op : opcode) (rd : reg) (rs1 : reg) (imm : imm12) (f3 : funct3)
+    | S (op : opcode) (rs1 : reg) (rs2 : reg) (imm : imm12) (f3 : funct3)
+    | B (op : opcode) (rs1 : reg) (rs2 : reg) (imm : imm12) (f3 : funct3)
+    | J (op : opcode) (rd : reg) (imm : imm12)
+    | A (op : opcode) (rd : reg) (rs1 : reg) (rs2 : reg) (addr : imm12)
+    | T (op : opcode) (rd : reg) (rs1 : reg) (rs2 : reg) (tile_id : imm12).
+
+  constant OPCODE_PARALLEL : int = 0x7B
+  constant OPCODE_TENSOR : int = 0x7D
+  constant OPCODE_ATOMIC : int = 0x7F
+  constant HALT_ADDR : int = 0xFFFFFFFF
+
+  predicate reg_valid (r : reg) =
+    0 <= r <= 31
+
+  predicate pc_valid (pc : int) =
+    pc = HALT_ADDR || (pc >= 0 && pc mod 4 = 0)
+
+  function encode (i : instr) : int =
+    match i with
+    | R op rd rs1 rs2 f3 f7 ->
+        (f7 lsl 25) + (rs2 lsl 20) + (rs1 lsl 15) + (f3 lsl 12) + (rd lsl 7) + opcode_val op
+    | I op rd rs1 imm f3 ->
+        (imm lsl 20) + (rs1 lsl 15) + (f3 lsl 12) + (rd lsl 7) + opcode_val op
+    | S op rs1 rs2 imm f3 ->
+        ((imm / 32) lsl 25) + (rs2 lsl 20) + (rs1 lsl 15) + (f3 lsl 12) + ((imm mod 32) lsl 7) + opcode_val op
+    | B op rs1 rs2 imm f3 ->
+        (((imm / 2) mod 64) lsl 25) + (rs2 lsl 20) + (rs1 lsl 15) + (f3 lsl 12) + (((imm / 2) mod 16) lsl 8) + opcode_val op
+    | J op rd imm ->
+        ((imm / 2) lsl 31) + ((imm / 2048) lsl 12) + ((imm / 2) mod 1024 lsl 21) + (rd lsl 7) + opcode_val op
+    | A op rd rs1 rs2 addr ->
+        (addr lsl 20) + (rs2 lsl 15) + (rs1 lsl 10) + (rd lsl 7) + opcode_val op
+    | T op rd rs1 rs2 tile_id ->
+        (tile_id lsl 20) + (rs2 lsl 15) + (rs1 lsl 10) + (rd lsl 7) + opcode_val op
+    end
+
+  function opcode_val (o : opcode) : int =
+    match o with
+    | OP_ADD -> 0x00 | OP_SUB -> 0x01 | OP_MUL -> 0x02 | OP_DIV -> 0x03
+    | OP_AND -> 0x04 | OP_OR -> 0x05 | OP_XOR -> 0x06 | OP_NOT -> 0x07
+    | OP_CMP -> 0x08 | OP_SLT -> 0x09 | OP_SEQ -> 0x0A | OP_SNE -> 0x0B
+    | OP_ADDI -> 0x0C | OP_ANDI -> 0x0D | OP_ORI -> 0x0E | OP_XORI -> 0x0F
+    | OP_LD -> 0x10 | OP_ST -> 0x11 | OP_LDI -> 0x12
+    | OP_JMP -> 0x13 | OP_BEQ -> 0x14 | OP_BNE -> 0x15 | OP_BLT -> 0x16 | OP_BGE -> 0x17
+    | OP_CALL -> 0x18 | OP_RET -> 0x19 | OP_HALT -> 0x1A
+    | OP_SPAWN -> 0x1B | OP_JOIN -> 0x1C | OP_SYNC -> 0x1D | OP_BARRIER -> 0x1E
+    | OP_SMID -> 0x25 | OP_LANEID -> 0x26 | OP_COREID -> 0x27
+    | OP_QRNG_READ -> 0x28 | OP_QRNG_SEED -> 0x29
+    | OP_ATOM_ADD -> 0x1F | OP_ATOM_SUB -> 0x20
+    | OP_ATOM_AND -> 0x21 | OP_ATOM_OR -> 0x22 | OP_ATOM_XOR -> 0x23 | OP_ATOM_CAS -> 0x24
+    | OP_TMOV -> 0x7D | OP_TLOAD -> 0x7E | OP_TSTORE -> 0x7F
+    | OP_TZERO -> 0x80 | OP_TSYNC -> 0x81 | OP_TILEID -> 0x82 | OP_TILESZ -> 0x83
+    | OP_TREDUCE -> 0x84 | OP_TZERO_PROD -> 0x85 | OP_TREDUCE_SYNC -> 0x86
+    end
+
+  lemma encode_injective :
+    forall i1 i2. encode i1 = encode i2 -> i1 = i2
+
+end

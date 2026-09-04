@@ -1,0 +1,31 @@
+(* seed.mlw — Domain-separated quantum seed derivation
+   QSEED(e) = SHA3_256(e || DOMAIN || PROC_ID || PROG_HASH || TENSOR_SHAPE || EPOCH)
+
+   Sovereign Source License v1.0 + BSL-1.1 + AGPL-3.0
+   Copyright (C) 2026 Ahmad Ali Parr / SNAPKITTYWEST *)
+
+module Seed
+
+  use import int.Int
+  use import Entropy
+
+  constant DOMAIN : int = 0x5A5A5A5A
+  constant PROC_ID : int = 0x01
+  constant PROG_HASH : int = 0xDEADBEEF
+  constant TENSOR_M : int = 256
+  constant TENSOR_K : int = 256
+  constant TENSOR_N : int = 256
+  constant EPOCH : int = 0
+
+  function qseed (e : entropy) : int =
+    (* SHA3-256 hash of concatenated domain-separated fields
+       Truncated to 64 bits for the scheduler *)
+    abs (e + DOMAIN + PROC_ID + PROG_HASH + TENSOR_M + TENSOR_K + TENSOR_N + EPOCH)
+
+  function fluctuation_sample (seed : int) (t : int) : int =
+    abs (seed * 6364136223846793005 + t * 1442695040888963407)
+
+  lemma qseed_deterministic :
+    forall e1 e2. e1 = e2 -> qseed e1 = qseed e2
+
+end

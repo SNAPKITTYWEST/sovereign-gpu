@@ -1,0 +1,229 @@
+// ============================================================================
+// NVIDIA Ampere (sm_86) SASS Assembly: Binary-Field FRI Butterfly Evaluator
+// GF(2^128) polynomial evaluation with carryless multiply-accumulate
+// Platform: RTX 30-series, A100 GPU, Hopper-compatible forward pass
+//
+// Sovereign Source License v1.0 + BSL-1.1 + AGPL-3.0
+// Copyright (C) 2026 Ahmad Ali Parr / SNAPKITTYWEST
+// ============================================================================
+
+.version 7.7
+.target sm_86
+.address_size 64
+
+.launch_bounds 256, 3
+
+.shared .align 128 .b8 shm_butterfly_cache[16384]
+.shared .align 64 .b8 shm_twiddle_local[2048]
+.shared .align 64 .b8 shm_reduction_constants[512]
+.shared .align 64 .b8 shm_sync_flags[64]
+
+.const .align 8 .u64 const_table {
+  0x100000007FFFFFFF,
+  0xFFFFFFFFFFFFFFFF,
+  0xFFFFFFFFFFFFFFFF,
+  0x0000000000000081,
+  0x8000000000000000,
+  0x7FFFFFFFFFFFFFFF,
+  0x0102040810204080,
+  0x0000000000000001
+}
+
+.entry fri_butterfly_evaluator (
+  .param .u64 param_poly_input_ptr,
+  .param .u64 param_poly_output_ptr,
+  .param .u64 param_twiddle_ptr,
+  .param .u32 param_domain_size_log2,
+  .param .u32 param_butterfly_stage,
+  .param .u32 param_thread_block_id,
+  .param .u32 param_shared_mem_offset,
+  .param .u32 param_padding_alignment
+) {
+  // Prologue
+  MOV.U32 R0, %tid.x;
+  MOV.U32 R1, %tid.y;
+  MOV.U32 R2, %tid.z;
+  MOV.U32 R3, %ctaid.x;
+  MOV.U32 R4, %ctaid.y;
+  MOV.U32 R5, %ntid.x;
+  MOV.U32 R6, %ntid.y;
+  MOV.U32 R7, %ntid.z;
+
+  IMAD.WIDE.U32 R9:R8, R3, R5, R0;
+
+  LD.PARAM.U64 R11:R10, [param_poly_input_ptr];
+  LD.PARAM.U64 R13:R12, [param_poly_output_ptr];
+  LD.PARAM.U64 R15:R14, [param_twiddle_ptr];
+  LD.PARAM.U32 R16, [param_domain_size_log2];
+  LD.PARAM.U32 R17, [param_butterfly_stage];
+
+  // Compute butterfly stride
+  MOV.U32 R18, 1;
+  SHL.U32 R18, R18, R17;
+
+  // Compute even/odd indices
+  SHR.U32 R19, R8, R17;
+  SHL.U32 R20, R19, R17;
+  IADD3.X.CC R21, R8, -R20, R20;
+  IADD3.CC R22, R21, R18, 0;
+
+  // Predicate registers
+  MOV.U32 P0, 1;
+  MOV.U32 P1, 0;
+  MOV.U32 P2, 1;
+
+  // Shared memory pointers
+  MOV.U64 R24:R23, 0;
+  MOV.U64 R26:R25, R0;
+  IMAD.WIDE.U32 R26:R25, R25, 16, 0;
+
+  // Global memory addresses
+  MOV.U64 R28:R27, R11:R10;
+  IMAD.WIDE.U32 R32:R31, R21, 16, R28:R27;
+  IMAD.WIDE.U32 R34:R33, R22, 16, R28:R27;
+
+  // Load even element (128-bit)
+  LDG.E.128 R39:R36, [R31:R32];
+
+  // Load odd element (128-bit)
+  LDG.E.128 R43:R40, [R33:R34];
+
+  // Load twiddle factor
+  IMAD.WIDE.U32 R46:R45, R19, 16, R15:R14;
+  LDG.E.128 R51:R48, [R45:R46];
+
+  BAR.SYNC 0;
+
+  // ====================================================================
+  // PHASE 1: Carryless multiplication x_odd * twiddle
+  // GF(2^128) multiply via XMAD (no carry propagation)
+  // ====================================================================
+
+  MOV.U32 R52, 0;
+  MOV.U32 R53, 0;
+  MOV.U32 R54, 0;
+  MOV.U32 R55, 0;
+
+  // 128x128 carryless multiply: all cross-products
+  XMAD.PSL.CBCC R52, R40, R48, R52;
+  XMAD.PSL.CBCC R53, R41, R48, R53;
+  XMAD.PSL.CBCC R53, R40, R49, R53;
+  XMAD.PSL.CBCC R54, R42, R48, R54;
+  XMAD.PSL.CBCC R54, R41, R49, R54;
+  XMAD.PSL.CBCC R54, R40, R50, R54;
+  XMAD.PSL.CBCC R55, R43, R48, R55;
+  XMAD.PSL.CBCC R55, R42, R49, R55;
+  XMAD.PSL.CBCC R55, R41, R50, R55;
+  XMAD.PSL.CBCC R55, R40, R51, R55;
+
+  // Second tier corrections
+  XMAD.PSL.CBCC R53, R41, R48, R53;
+  XMAD.PSL.CBCC R54, R42, R48, R54;
+  XMAD.PSL.CBCC R54, R41, R49, R54;
+  XMAD.PSL.CBCC R55, R43, R48, R55;
+  XMAD.PSL.CBCC R55, R42, R49, R55;
+  XMAD.PSL.CBCC R55, R41, R50, R55;
+
+  // Third tier
+  XMAD.PSL.CBCC R54, R42, R48, R54;
+  XMAD.PSL.CBCC R54, R41, R49, R54;
+  XMAD.PSL.CBCC R54, R40, R50, R54;
+  XMAD.PSL.CBCC R55, R43, R48, R55;
+  XMAD.PSL.CBCC R55, R42, R49, R55;
+  XMAD.PSL.CBCC R55, R41, R50, R55;
+  XMAD.PSL.CBCC R55, R40, R51, R55;
+
+  // Final tier
+  XMAD.PSL.CBCC R55, R43, R48, R55;
+  XMAD.PSL.CBCC R55, R42, R49, R55;
+  XMAD.PSL.CBCC R55, R41, R50, R55;
+  XMAD.PSL.CBCC R55, R40, R51, R55;
+
+  // Store product to shared memory
+  STS.U32 [R25:R24 + 0], R52;
+  STS.U32 [R25:R24 + 4], R53;
+  STS.U32 [R25:R24 + 8], R54;
+  STS.U32 [R25:R24 + 12], R55;
+
+  // ====================================================================
+  // PHASE 2: GF(2^128) Polynomial Reduction
+  // Irreducible: f(x) = x^128 + x^7 + x^2 + x + 1
+  // ====================================================================
+
+  LDS.U32 R56, [R25:R24 + 0];
+  LDS.U32 R57, [R25:R24 + 4];
+  LDS.U32 R58, [R25:R24 + 8];
+  LDS.U32 R59, [R25:R24 + 12];
+
+  // Reduction: high word * x^128 mod f(x)
+  MOV.U32 R60, R59;
+  SHL.U32 R61, R60, 7;
+  SHR.U32 R62, R60, 25;
+  SHL.U32 R63, R60, 2;
+  SHL.U32 R64, R60, 1;
+
+  // XOR reduction on low word
+  LOP3.LUT R65, R56, R61, R63, 0x96;
+  LOP3.LUT R65, R65, R64, R60, 0x96;
+  MOV.U32 R56, R65;
+
+  // Reduce mid-low word
+  MOV.U32 R66, R57;
+  SHL.U32 R67, R62, 7;
+  LOP3.LUT R66, R66, R67, 0, 0x96;
+  MOV.U32 R57, R66;
+
+  // Reduce mid-high word
+  MOV.U32 R68, R58;
+  SHR.U32 R69, R62, 25;
+  LOP3.LUT R68, R68, R69, 0, 0x96;
+  MOV.U32 R58, R68;
+
+  // Final 128-bit result
+  MOV.U32 R70, R56;
+  MOV.U32 R71, R57;
+  MOV.U32 R72, R58;
+  MOV.U32 R73, 0;
+
+  // ====================================================================
+  // PHASE 3: Butterfly XOR operations
+  // x_odd' = x_even XOR product
+  // x_even' = x_even XOR x_odd'
+  // ====================================================================
+
+  // x_odd' = x_even XOR product
+  LOP3.LUT R40, R36, R70, 0, 0x96;
+  LOP3.LUT R41, R37, R71, 0, 0x96;
+  LOP3.LUT R42, R38, R72, 0, 0x96;
+  LOP3.LUT R43, R39, R73, 0, 0x96;
+
+  // x_even' = x_even XOR x_odd'
+  LOP3.LUT R36, R36, R40, 0, 0x96;
+  LOP3.LUT R37, R37, R41, 0, 0x96;
+  LOP3.LUT R38, R38, R42, 0, 0x96;
+  LOP3.LUT R39, R39, R43, 0, 0x96;
+
+  // ====================================================================
+  // Result Storage and Epilogue
+  // ====================================================================
+
+  IMAD.WIDE.U32 R78:R77, R21, 16, R13:R12;
+  IMAD.WIDE.U32 R80:R79, R22, 16, R13:R12;
+
+  STG.E.128 [R77:R78], R39:R36;
+  STG.E.128 [R79:R80], R43:R40;
+
+  MEMBAR.GL;
+  BAR.SYNC 0;
+
+  EXIT;
+}
+
+.attribute "MaxNreg", 256
+.attribute "MaxNtid", "256,1,1"
+.attribute "ReqNtid", "32,1,1"
+.attribute "MaxNWarp", 8
+.attribute "SharedMemBytes", 16384
+.attribute "CudaArchitecture", "sm_86"
+
+.end
