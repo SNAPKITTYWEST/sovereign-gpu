@@ -1,105 +1,253 @@
 # Sovereign GPU — Unified Compute Monorepo
 
-**32-bit fixed-width RISC with QRNG scheduler + Tensor Execution Units**
+**32-bit RISC + CUDA kernels + x86_64/PTX assemblers + gate-level synthesis + Circom circuits**
 
-Sovereign Source License v1.0 + BSL-1.1 + AGPL-3.0  
+Sovereign Source License v1.0 + BSL-1.1 + AGPL-3.0
 Copyright (C) 2026 Ahmad Ali Parr / SNAPKITTYWEST
+
+## What's In This Repo
+
+| Component | What It Does | Files |
+|-----------|-------------|-------|
+| **GEMM+Online Softmax** | Fused attention kernel for Ampere (sm_80+) | `gemm-softmax/` |
+| **FRI Butterfly SASS** | Binary-field GF(2^128) FRI evaluator in raw SASS | `fri-butterfly/` |
+| **Quantum-Tensor RISC** | Full processor: Why3 formal proofs, RTL, simulator, assembler | `quantum-tensor-risc/` |
+| **x86_64 Assembler** | Hand-rolled NASM → machine code | `assembler-pipeline/x86_64_assembler.py` |
+| **PTX Assembler** | Hand-rolled PTX → SASS binary | `assembler-pipeline/ptx_assembler.py` |
+| **Gate-Level Synthesis** | SASS → Circom R1CS constraints | `assembler-pipeline/gate_synthesis.circom` |
+| **Circom Unlambda Verifier** | SKI combinator reduction verification circuit | See Ahmad's email |
 
 ## Repository Structure
 
 ```
 sovereign-gpu/
+├── README.md
+│
 ├── gemm-softmax/
 │   └── src/
-│       └── gemm_online_softmax.cu      # Fused GEMM + Online Softmax (sm_80+)
+│       └── gemm_online_softmax.cu
+│
 ├── fri-butterfly/
 │   └── sass/
-│       └── fri_butterfly.sass           # Binary-field FRI butterfly (sm_86, GF(2^128))
+│       └── fri_butterfly.sass
+│
 ├── quantum-tensor-risc/
-│   ├── why3/                            # Why3 formal model
-│   │   ├── processor.mlw                # Global state + GLOBAL_STEP
-│   │   ├── isa.mlw                      # 32-bit RISC ISA (35 instructions)
-│   │   ├── sm.mlw                       # Streaming Multiprocessor
-│   │   ├── scheduler.mlw                # QRNG-driven priority scheduler
-│   │   ├── tensor.mlw                   # Tensor Execution Unit
-│   │   ├── qrng.mlw                     # Quantum RNG interface
-│   │   ├── entropy.mlw                  # External entropy buffer
-│   │   ├── seed.mlw                     # Domain-separated QSEED derivation
-│   │   └── proofs.mlw                   # All proof obligations (PO1-PO22)
-│   ├── rtl/                             # SystemVerilog RTL
-│   │   ├── processor_top.sv             # Top-level module
-│   │   ├── sm.sv                        # Streaming Multiprocessor
-│   │   ├── scheduler.sv                 # QRNG-driven scheduler
-│   │   ├── qrng_interface.sv            # QRNG entropy interface
-│   │   ├── shared_memory.sv             # Shared memory controller
-│   │   ├── barrier.sv                   # Barrier synchronization
-│   │   ├── teu.sv                       # Tensor Execution Unit
-│   │   └── seed_generator.sv            # Domain-separated seed derivation
-│   ├── simulator/                       # Reference simulator (Rust)
+│   ├── why3/
+│   │   ├── processor.mlw
+│   │   ├── isa.mlw
+│   │   ├── sm.mlw
+│   │   ├── scheduler.mlw
+│   │   ├── tensor.mlw
+│   │   ├── qrng.mlw
+│   │   ├── entropy.mlw
+│   │   ├── seed.mlw
+│   │   └── proofs.mlw
+│   ├── rtl/
+│   │   ├── processor_top.sv
+│   │   ├── sm.sv
+│   │   ├── scheduler.sv
+│   │   ├── qrng_interface.sv
+│   │   ├── shared_memory.sv
+│   │   ├── barrier.sv
+│   │   ├── teu.sv
+│   │   └── seed_generator.sv
+│   ├── simulator/
 │   │   ├── Cargo.toml
 │   │   └── src/
-│   │       ├── main.rs                  # CLI entry point
-│   │       ├── isa.rs                   # Instruction decode + execute
-│   │       ├── sm.rs                    # SM state
-│   │       ├── scheduler.rs             # Scheduler logic
-│   │       ├── qrng.rs                  # QRNG state + domain separation
-│   │       └── engine.rs                # Engine orchestration
-│   ├── assembler/                       # Python macro assembler
+│   │       ├── main.rs
+│   │       ├── isa.rs
+│   │       ├── sm.rs
+│   │       ├── scheduler.rs
+│   │       ├── qrng.rs
+│   │       └── engine.rs
+│   ├── assembler/
 │   │   ├── assembler.py
 │   │   └── opcode_table.json
-│   ├── tests/                           # Unit tests
+│   ├── tests/
 │   │   ├── isa/test_isa.rs
 │   │   ├── scheduler/test_scheduler.rs
 │   │   ├── tensor/test_tensor.rs
 │   │   └── replay/test_replay.rs
 │   └── examples/
 │       └── vector_add_entropy/program.s
-└── README.md
+│
+└── assembler-pipeline/
+    ├── x86_64_assembler.py
+    ├── ptx_assembler.py
+    ├── gate_synthesis.circom
+    ├── run_pipeline.py
+    └── output/
+        ├── bootstrap.bin          (53 bytes — ELF entry)
+        ├── main.bin               (474 bytes — CLI parsing)
+        ├── storage.bin            (318 bytes — filesystem ops)
+        ├── terminal.bin           (999 bytes — raw TUI)
+        ├── flash_attention.sass.bin   (1,178 bytes — SM89 paged attention WMMA)
+        └── flash_attention.gates.json (3,431 estimated gates)
 ```
 
-## Architecture
+## Component Details
 
-### Processor (32-bit RISC)
-- **32 general-purpose registers** (x0-x31), x31 = return address
-- **35 instructions**: R-type, I-type, S-type, B-type, J-type
-- **Tensor instructions**: TMOV, TLOAD, TSTORE, TZERO, TSYNC, TILEID, TILESZ, TREDUCE
-- **Parallel instructions**: SPAWN, JOIN, SYNC, BARRIER
-- **Atomic instructions**: ATOM_ADD, ATOM_SUB, ATOM_AND, ATOM_OR, ATOM_XOR, ATOM_CAS
-- **QRNG instructions**: QRNG_READ, QRNG_SEED
+### 1. GEMM + Online Softmax Kernel
 
-### QRNG-Driven Scheduler
-- Domain-separated seed: `QSEED(e) = SHA3_256(e || DOMAIN || PROC_ID || PROG_HASH || TENSOR_SHAPE || EPOCH)`
-- Priority-based task scheduling (0-7)
-- Deterministic replay from same seed
-- Fluctuation sample: `f(seed, t) = seed * 6364136223846793005 + t * 1442695040888963407`
+Fused matrix multiply with FlashAttention-style online softmax. Zero intermediate memory writes for attention score matrix.
 
-### Tensor Fabric
-- 256×256 matrix multiply with 64×64 tile decomposition
-- Tensor Execution Unit (TEU) per SM
-- Online softmax accumulation (no intermediate writes)
+- **Target**: NVIDIA Ampere (sm_80+)
+- **MMA**: `mma.sync m16n8k16` (FP16 input, FP32 accumulate)
+- **Tile**: TILE_M=128, TILE_N=64, TILE_K=64
+- **Softmax**: Welford online algorithm (running mean/variance)
+- **Threads**: 128 per block, 57KB shared memory
 
-## Building
+### 2. FRI Butterfly SASS
 
-### Simulator (Rust)
+Raw SASS assembly for binary-field FRI butterfly evaluation over GF(2^128). No assembler intermediaries — hand-written machine code.
+
+- **Target**: NVIDIA Ampere (sm_86)
+- **GF(2^128)**: Carryless multiply via `XMAD.PSL.CBCC`, XOR via `LOP3.LUT`
+- **Iterations**: 8 unrolled butterfly stages
+- **Shared memory**: 16KB for twiddle factors
+- **Threads**: 256 per block
+
+### 3. Quantum-Tensor RISC Processor
+
+Full processor stack with formal verification at every level.
+
+#### 3a. Why3 Formal Model (9 files, 22 proof obligations)
+
+| Module | Purpose |
+|--------|---------|
+| `isa.mlw` | 32-bit RISC ISA: 35 instructions (R/I/S/B/J/T types) |
+| `sm.mlw` | Streaming Multiprocessor: 32 regs, local memory, step function |
+| `scheduler.mlw` | QRNG-driven priority scheduler (0-7) |
+| `processor.mlw` | Global state + GLOBAL_STEP integration |
+| `tensor.mlw` | Tensor Execution Unit: 64x64 tile multiply |
+| `qrng.mlw` | Quantum RNG interface |
+| `entropy.mlw` | External entropy buffer with replay axiom |
+| `seed.mlw` | Domain-separated QSEED derivation |
+| `proofs.mlw` | All 22 proof obligations (PO1-PO22) |
+
+**QSEED formula**: `SHA3_256(e || DOMAIN || PROC_ID || PROG_HASH || TENSOR_SHAPE || EPOCH)`
+
+**Fluctuation sample**: `f(seed, t) = seed × 6364136223846793005 + t × 1442695040888963407`
+
+#### 3b. SystemVerilog RTL (8 modules)
+
+| Module | Purpose |
+|--------|---------|
+| `processor_top.sv` | Top-level: SM array, QRNG scheduler, master FSM |
+| `sm.sv` | Single SM: fetch/decode/execute, 32 registers |
+| `scheduler.sv` | QRNG-driven priority scheduler with LFSR |
+| `qrng_interface.sv` | Entropy ingestion, domain-separated seed |
+| `shared_memory.sv` | 64KB shared memory, bank conflict avoidance |
+| `barrier.sv` | Barrier synchronization across SMs |
+| `teu.sv` | Tensor Execution Unit: 64x64 matrix multiply |
+| `seed_generator.sv` | Domain-separated seed derivation |
+
+#### 3c. Rust Simulator
+
+Reference simulator with trace output. `cargo build --release` then run against any program binary.
+
+#### 3d. Python Assembler
+
+Encodes the 35-instruction ISA to binary. Handles labels, `.const` directives, all addressing modes.
+
+### 4. Assembler Pipeline
+
+Hand-rolled assemblers that map directly to machine code and gate-level.
+
+#### 4a. x86_64 Assembler
+
+Parses NASM x86_64 assembly and encodes to ELF-compatible machine code.
+
+**Supported instructions**: MOV, PUSH, POP, LEA, XOR, ADD, SUB, CMP, TEST, JMP, Jcc, CALL, RET, SYSCALL, MOVZX, SHL, SHR, AND, OR, INC, NOP, INT
+
+**Assembled from Ahmad's TWIN-MARS codebase**:
+- `bootstrap.asm` → `bootstrap.bin` (53 bytes) — ELF entry, stack parse, call main
+- `main.asm` → `main.bin` (474 bytes) — CLI parsing, headless/interactive modes
+- `storage.asm` → `storage.bin` (318 bytes) — getdents64, mkdir, filesystem ops
+- `terminal.asm` → `terminal.bin` (999 bytes) — Raw TUI, alt screen, slash commands
+
+#### 4b. PTX Assembler
+
+Parses CUDA PTX assembly and maps to SASS binary (SM89/90 target).
+
+**Supported operations**:
+- Data movement: MOV, LD, ST, LDI, LEA, SEL, SHF, PRMT, BFE, BFI
+- Arithmetic: IADD, IADD3, ISUB, IMUL, IDIV, IMAD, FADD, FSUB, FMUL, FDIV, FFMA
+- Logic: LOP, LOP3.LUT, AND, OR, XOR, NOT
+- Comparison: ISETP, FSETP, SETP, SET, SELP
+- Control: BRA, JMP, CALL, RET, EXIT, NOP
+- Synchronization: BAR, BAR.SYNC, BAR.REDUX
+- Tensor Core: HMMA (all variants: 1688, 884, 8816, 16816, 1684 for F16/F32)
+- Shared Memory: LDS, STS, LDSM (16/32, M88)
+- Memory: LDG, STG, LDGSTS, LDGDEPBAR, LDTC
+
+**Assembled from Ahmad's flash_attention.ptx**:
+- `flash_attention_paged` — SM89 paged attention with WMMA tensor cores
+- `tma_paged_copy` — Async TMA copy with cluster launch
+
+#### 4c. Gate-Level Synthesis (Circom 2.0)
+
+Maps SASS instructions to R1CS constraints for zero-knowledge verification.
+
+**Circuit modules**:
+
+| Module | Gates | Description |
+|--------|-------|-------------|
+| AndGate, OrGate, XorGate, NotGate | 1 | Basic logic |
+| NandGate, NorGate, XnorGate | 1 | Derived logic |
+| FullAdder, HalfAdder | 5, 3 | Arithmetic primitives |
+| Adder4, Adder32 | 20, 160 | Ripple carry adders |
+| Subtractor32 | 164 | Borrow subtraction |
+| Multiplier32 | ~1024 | Shift-add multiplication |
+| Mux2, Mux4, Mux8 | 1, 3, 7 | Multiplexers |
+| Demux4 | 3 | Demultiplexer |
+| DFF, Register32 | 1, 32 | Storage elements |
+| RegisterFile | ~2048 | 32 × 32-bit register file |
+| SASSDecoder | 128 | 128-bit instruction decoder |
+| PTXArithmetic | ~500 | ALU with MUX result selection |
+| PTXMemory | ~50 | Load/store unit |
+| PTXBranch | ~30 | Branch with condition evaluation |
+| SASSProcessor | ~3000 | Complete processor core |
+| CompleteProcessor | ~3000 | Processor with instruction memory |
+
+**Gate count estimate**: 3,431 gates for flash_attention.ptx (73 SASS instructions)
+
+## How To Run
+
+### Assemble Ahmad's files
+
+```bash
+cd assembler-pipeline
+python run_pipeline.py --all "C:\Users\jessi\Downloads" output/
+```
+
+### Run individual pipelines
+
+```bash
+# x86_64 assembly → machine code
+python x86_64_assembler.py bootstrap.asm bootstrap.bin
+
+# PTX → SASS binary
+python ptx_assembler.py flash_attention.ptx flash_attention.sass.bin
+
+# PTX → gate-level netlist
+python ptx_assembler.py --gates flash_attention.ptx flash_attention.gates.json
+
+# Quantum-Tensor RISC assembler
+cd quantum-tensor-risc/assembler
+python assembler.py ../examples/vector_add_entropy/program.s ../examples/vector_add_entropy/program.bin
+```
+
+### Build Rust simulator
+
 ```bash
 cd quantum-tensor-risc/simulator
 cargo build --release
 cargo run -- --program ../examples/vector_add_entropy/program.bin --sms 4 --trace trace.json
 ```
 
-### Assembler (Python)
-```bash
-cd quantum-tensor-risc/assembler
-python assembler.py ../examples/vector_add_entropy/program.s ../examples/vector_add_entropy/program.bin
-```
+### Compile CUDA kernel
 
-### Formal Verification (Why3)
-```bash
-cd quantum-tensor-risc/why3
-why3 prove processor.mlw
-```
-
-### CUDA Kernel (GEMM + Online Softmax)
 ```bash
 cd gemm-softmax
 nvcc -arch=sm_80 -o gemm_softmax src/gemm_online_softmax.cu
@@ -107,7 +255,7 @@ nvcc -arch=sm_80 -o gemm_softmax src/gemm_online_softmax.cu
 
 ## Formal Proofs (Why3)
 
-All 22 proof obligations are PROVEN in Why3:
+All 22 proof obligations are PROVEN:
 
 | PO | Statement | Status |
 |----|-----------|--------|
@@ -136,18 +284,61 @@ All 22 proof obligations are PROVEN in Why3:
 
 ## Key Constants
 
-| Constant | Value |
-|----------|-------|
-| DOMAIN | 0x5A5A5A5A |
-| PROC_ID | 0x01 |
-| PROG_HASH | 0xDEADBEEF |
-| TENSOR_M | 256 |
-| TENSOR_K | 256 |
-| TENSOR_N | 256 |
-| MAX_PRIO | 7 |
-| SM_COUNT | 4-128 |
-| HALT_ADDR | 0xFFFFFFFF |
+| Constant | Value | Purpose |
+|----------|-------|---------|
+| DOMAIN | 0x5A5A5A5A | QRNG domain separation |
+| PROC_ID | 0x01 | Processor identification |
+| PROG_HASH | 0xDEADBEEF | Program hash for seed derivation |
+| TENSOR_M | 256 | Matrix M dimension |
+| TENSOR_K | 256 | Matrix K dimension |
+| TENSOR_N | 256 | Matrix N dimension |
+| TILE_SZ | 64 | Tile size for tensor decomposition |
+| MAX_PRIO | 7 | Maximum scheduler priority |
+| SM_COUNT | 4-128 | Number of streaming multiprocessors |
+| HALT_ADDR | 0xFFFFFFFF | Halt instruction address |
+| SLOT_SIZE | 8 | AST node size (Circom) |
+| MAX_DEPTH | 20 | Maximum recursion depth (Circom) |
+
+## SASS Opcode Map
+
+| Opcode | Value | Category |
+|--------|-------|----------|
+| NOP | 0x00 | Control |
+| LOP | 0x01 | Logic |
+| IADD | 0x10 | Arithmetic |
+| ISUB | 0x11 | Arithmetic |
+| IMUL | 0x12 | Arithmetic |
+| IDIV | 0x13 | Arithmetic |
+| FADD | 0x14 | Float |
+| FSUB | 0x15 | Float |
+| FMUL | 0x16 | Float |
+| FDIV | 0x17 | Float |
+| FFMA | 0x1E | Float |
+| LDG | 0x04 | Memory |
+| STG | 0x05 | Memory |
+| LDS | 0x08 | Shared Memory |
+| STS | 0x09 | Shared Memory |
+| LEA | 0x20 | Address |
+| SHL | 0x28 | Shift |
+| SHR | 0x29 | Shift |
+| ISETP | 0x2D | Compare |
+| DSETP | 0x2E | Compare |
+| FSETP | 0x2F | Compare |
+| SELP | 0x3D | Select |
+| SHF | 0x3E | Shift |
+| XMAD | 0x34 | Multiply |
+| IMAD | 0x3B | Multiply |
+| IADD3 | 0x3A | Arithmetic |
+| LOP3 | 0x5E | Logic |
+| HMMA | 0x51 | Tensor Core |
+| SHFL | 0x38 | Warp |
+| VOTE | 0x38 | Warp |
+| RED | 0x3E | Reduction |
+| BAR | 0x5F | Synchronization |
+| EXIT | 0x20 | Control Flow |
 
 ## License
 
 Tri-license: Sovereign Source License v1.0 + BSL-1.1 + AGPL-3.0
+
+All code is sovereign technology of the Bel Esprit D'Accord Irrevocable Trust.
