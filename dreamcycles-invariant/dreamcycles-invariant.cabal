@@ -1,0 +1,27 @@
+cabal-version: 2.4
+name: dreamcycles-invariant
+version: 1.0.0
+synopsis: Invariant-preservation kit with ANU QRNG quantum superposition
+license: LicenseRef-SovereignSourceLicense-1.0
+author: Ahmad Ali Parr
+maintainer: ahmedparr93@gmail.com
+build-type: Simple
+
+library
+  exposed-modules:
+    DreamcyclesInvariant
+  hs-source-dirs: src
+  build-depends:
+    base >= 4.14 && < 5,
+    process >= 1.6
+  default-language: Haskell2010
+  ghc-options: -Wall
+
+test-suite invariant-tests
+  type: exitcode-stdio-1.0
+  hs-source-dirs: test
+  main-is: Test.hs
+  build-depends:
+    base >= 4.14 && < 5,
+    dreamcycles-invariant
+  default-language: Haskell2010

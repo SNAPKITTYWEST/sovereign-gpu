@@ -1,0 +1,7 @@
+QALLOC 3
+H q0
+CX q0 q1
+CX q0 q2
+MEASURE q0 c0
+MEASURE q1 c1
+MEASURE q2 c2

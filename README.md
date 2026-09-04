@@ -1,6 +1,6 @@
 # Sovereign GPU — Unified Compute Monorepo
 
-**32-bit RISC + CUDA kernels + x86_64/PTX assemblers + gate-level synthesis + Circom circuits**
+**32-bit RISC + CUDA kernels + x86_64/PTX assemblers + gate-level synthesis + Circom circuits + Quantum Array Processor + ANU QRNG**
 
 Sovereign Source License v1.0 + BSL-1.1 + AGPL-3.0
 Copyright (C) 2026 Ahmad Ali Parr / SNAPKITTYWEST
@@ -15,7 +15,9 @@ Copyright (C) 2026 Ahmad Ali Parr / SNAPKITTYWEST
 | **x86_64 Assembler** | Hand-rolled NASM → machine code | `assembler-pipeline/x86_64_assembler.py` |
 | **PTX Assembler** | Hand-rolled PTX → SASS binary | `assembler-pipeline/ptx_assembler.py` |
 | **Gate-Level Synthesis** | SASS → Circom R1CS constraints | `assembler-pipeline/gate_synthesis.circom` |
-| **Circom Unlambda Verifier** | SKI combinator reduction verification circuit | See Ahmad's email |
+| **Circom Unlambda Verifier** | SKI combinator reduction verification circuit | `circuits/unlambda_verifier.circom` |
+| **Quantum Array Processor** | J-style → QNASM → binary → circuit → statevector | `qprocessor/` |
+| **DreamcyclesInvariant** | ANU QRNG + invariant preservation + quantum superposition | `dreamcycles-invariant/` |
 
 ## Repository Structure
 
@@ -70,6 +72,44 @@ sovereign-gpu/
 │   │   └── replay/test_replay.rs
 │   └── examples/
 │       └── vector_add_entropy/program.s
+│
+├── qprocessor/
+│   ├── __init__.py
+│   ├── lexer.py
+│   ├── parser.py
+│   ├── ast.py
+│   ├── arrays.py
+│   ├── quantum_ir.py
+│   ├── qnasm.py
+│   ├── assembler.py
+│   ├── circuit.py
+│   ├── simulator.py
+│   ├── compiler.py
+│   ├── optimizer.py
+│   ├── runtime.py
+│   ├── errors.py
+│   ├── cli.py
+│   ├── tests/
+│   │   ├── test_arrays.py
+│   │   ├── test_qnasm.py
+│   │   ├── test_simulator.py
+│   │   └── test_compiler.py
+│   └── examples/
+│       ├── bell.qnasm
+│       ├── ghz.qnasm
+│       ├── array.j
+│       └── matmul.j
+│
+├── dreamcycles-invariant/
+│   ├── dreamcycles-invariant.cabal
+│   ├── README.md
+│   ├── src/
+│   │   └── DreamcyclesInvariant.hs
+│   └── test/
+│       └── Test.hs
+│
+├── circuits/
+│   └── unlambda_verifier.circom
 │
 └── assembler-pipeline/
     ├── x86_64_assembler.py
@@ -212,6 +252,35 @@ Maps SASS instructions to R1CS constraints for zero-knowledge verification.
 
 **Gate count estimate**: 3,431 gates for flash_attention.ptx (73 SASS instructions)
 
+### 5. Quantum Array Processor
+
+Recursive quantum array processor: J-style array expressions → QNASM → binary → quantum circuit → statevector simulation.
+
+**Pipeline**: `J → Array IR → Quantum IR → QNASM → Binary → Circuit → Statevector → Measurement`
+
+**Features**:
+- J-style array expression language with element-wise ops, reshape, transpose, matmul
+- Quantum NASM (QNASM) intermediate assembly: QALLOC, H/X/Y/Z/CX/CZ, RX/RY/RZ, MEASURE
+- Quantum array operations: QARRAY, QMAP, QREDUCE, QDOT, QMATMUL
+- Statevector simulator with full gate application
+- Optimizations: barrier removal, rotation merging, identity elimination
+- CLI: compile, assemble, run, simulate, disassemble, dump-ir
+
+**Files**: 15 Python modules, 4 test files, 4 example programs
+
+### 6. DreamcyclesInvariant
+
+Invariant-preservation kit with ANU QRNG quantum superposition model.
+
+**Features**:
+- `preservesInvariant` — Exact-Eq variant for discrete invariants
+- `preservesInvariantMetric` — Complex-valued metric with tolerance
+- `Qubit` type with Hadamard gate, measurement, probability tracking
+- `fetchANU` — Live connection to ANU QRNG (`qrng.anu.edu.au`)
+- `TensorBlock` — Fold/length operations for tensor data
+
+**Integration**: ANU quantum randomness feeds the quantum scheduler for measurement-driven collapse.
+
 ## How To Run
 
 ### Assemble Ahmad's files
@@ -236,6 +305,12 @@ python ptx_assembler.py --gates flash_attention.ptx flash_attention.gates.json
 # Quantum-Tensor RISC assembler
 cd quantum-tensor-risc/assembler
 python assembler.py ../examples/vector_add_entropy/program.s ../examples/vector_add_entropy/program.bin
+
+# Quantum Array Processor
+cd qprocessor
+python -m qprocessor compile ../qprocessor/examples/array.j
+python -m qprocessor assemble ../qprocessor/examples/bell.qnasm
+python -m qprocessor simulate ../qprocessor/examples/bell.qnasm
 ```
 
 ### Build Rust simulator
