@@ -18,6 +18,7 @@ Copyright (C) 2026 Ahmad Ali Parr / SNAPKITTYWEST
 | **Circom Unlambda Verifier** | SKI combinator reduction verification circuit | `circuits/unlambda_verifier.circom` |
 | **Quantum Array Processor** | J-style → QNASM → binary → circuit → statevector | `qprocessor/` |
 | **DreamcyclesInvariant** | ANU QRNG + invariant preservation + quantum superposition | `dreamcycles-invariant/` |
+| **FORGE Suite** | α-parameter tuning, deterministic work-stealing, TVD sweeps | `forge/` |
 
 ## Repository Structure
 
@@ -110,6 +111,16 @@ sovereign-gpu/
 │
 ├── circuits/
 │   └── unlambda_verifier.circom
+│
+├── forge/
+│   ├── exact_rrd.py
+│   ├── anu_qrng.py
+│   ├── qasm_gen.py
+│   ├── work_steal.py
+│   ├── sweep_alpha.py
+│   ├── run_parallel.py
+│   ├── density_matrix_sweep.py
+│   └── README.md
 │
 └── assembler-pipeline/
     ├── x86_64_assembler.py
