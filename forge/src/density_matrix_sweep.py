@@ -21,8 +21,8 @@ import time
 from fractions import Fraction
 from typing import List, Tuple
 
-from exact_rrd import exact_rrd, _get_shape, _flatten
-from anu_qrng import get_anu_field_elements
+from .exact_rrd import exact_rrd, _get_shape, _flatten
+from .anu_qrng import get_anu_field_elements
 
 try:
     from qiskit import QuantumCircuit

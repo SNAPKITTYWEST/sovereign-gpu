@@ -21,8 +21,8 @@ import csv
 from fractions import Fraction
 from typing import List, Tuple
 
-from exact_rrd import exact_rrd
-from qasm_gen import generate_openqasm
+from .exact_rrd import exact_rrd
+from .qasm_gen import generate_openqasm
 
 try:
     from qiskit import QuantumCircuit

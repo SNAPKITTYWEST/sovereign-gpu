@@ -19,7 +19,7 @@ from __future__ import annotations
 from fractions import Fraction
 from typing import List, Tuple
 
-from exact_rrd import exact_rrd, vec_to_angles
+from .exact_rrd import exact_rrd, vec_to_angles
 
 try:
     from anu_qrng import get_anu_field_elements

@@ -18,10 +18,10 @@ from __future__ import annotations
 from fractions import Fraction
 from typing import List, Tuple
 
-from work_steal import deterministic_work_steal
-from exact_rrd import _get_shape
-from qasm_gen import generate_openqasm
-from anu_qrng import log_fluctuation_to_json
+from .work_steal import deterministic_work_steal
+from .exact_rrd import _get_shape
+from .qasm_gen import generate_openqasm
+from .anu_qrng import log_fluctuation_to_json
 
 import random
 
