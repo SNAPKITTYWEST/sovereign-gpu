@@ -1,4 +1,15 @@
 #!/usr/bin/env python3
+
+# Copyright © 2026 SnapKitty Collective and contributors.
+#
+# This file is part of a work licensed under the
+# SnapKitty Strong Network Copyleft License Version 1.0 (SSNCL-1.0).
+#
+# You may use, study, modify, copy, and redistribute this work
+# only under the terms of SSNCL-1.0.
+#
+# A copy of SSNCL-1.0 must accompany this work.
+
 """sovereign-gpu assembler — Python 3.11+ macro assembler for 32-bit RISC ISA.
  Sovereign Source License v1.0 + BSL-1.1 + AGPL-3.0
  Copyright (C) 2026 Ahmad Ali Parr / SNAPKITTYWEST

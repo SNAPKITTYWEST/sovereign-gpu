@@ -1,3 +1,13 @@
+// Copyright © 2026 SnapKitty Collective and contributors.
+//
+// This file is part of a work licensed under the
+// SnapKitty Strong Network Copyleft License Version 1.0 (SSNCL-1.0).
+//
+// You may use, study, modify, copy, and redistribute this work
+// only under the terms of SSNCL-1.0.
+//
+// A copy of SSNCL-1.0 must accompany this work.
+
 fn test_scheduler_no_op_always_valid() {
     // PO9: NoOp is always in valid_actions
     let halted = vec![false, false, false, false];
